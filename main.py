@@ -1,79 +1,111 @@
-"""
-Copyright (C) 2018 NVIDIA Corporation.  All rights reserved.
-Licensed under the CC BY-NC-SA 4.0 license (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
-"""
-import torch.utils.data as data
-import os.path
-import numpy as np
-
-def numpy_loader(path):
-    data = np.load(path)
-    data = data.astype("float32")
-    if len(data.shape) > 2:
-        data = np.swapaxes(data, 0, 1)
-        data = np.swapaxes(data, 1, 2)
-    return data
-
-###############################################################################
-# Code from
-# https://github.com/pytorch/vision/blob/master/torchvision/datasets/folder.py
-# Modified the original code so that it also loads images from the current
-# directory as well as the subdirectories
-###############################################################################
-
-import torch.utils.data as data
-
 from PIL import Image
-import os
-import os.path
+import numpy as np
+import librosa
+import matplotlib.pyplot as plt
+from IPython.display import Audio, display
+import tensorflow as tf
+import soundfile as sf
+from keras.layers import *
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
 
-VALID_EXTENSIONS = [
-#    '.jpg', '.JPG', '.jpeg', '.JPEG',
-#    '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP',
-    '.npy',
-]
+from Utils import *
+# -----------------------------------------------------------------------------
+# INTRODUÇÃO...
 
+SIZE = (1025, 430)
 
-def is_valid_file(filename):
-    return any(filename.endswith(extension) for extension in VALID_EXTENSIONS)
+# AQUI ABRIMOS DUAS MUSICAS, UMA QUE TERA SUA ESTRUTURA MANTIDA
+# E OUTRA QUE SERVIRA DE ESTUDO PARA UMA APROXIMAÇÃO DA TRASFERENCIA DE ESTILO.
+SOUND = "data/Music/AC-DC.wav"
+STYLE = "data/Music/Bach.wav"
 
-
-def make_dataset(dir):
-    dataset = []
-    assert os.path.isdir(dir), '%s is not a valid directory' % dir
-
-    for root, _, fnames in sorted(os.walk(dir)):
-        for fname in fnames:
-            if is_valid_file(fname):
-                path = os.path.join(root, fname)
-                dataset.append(path)
-
-    return dataset
+# ESCULTANDO O SINAL...
 
 
-class ImageFolder(data.Dataset):
+content_img, mag_min, mag_max, phase = audio_to_img(SOUND, SIZE)
+style_img, _, _, _ = audio_to_img(STYLE, SIZE)
 
-    def __init__(self, root, transform=None, return_paths=False,
-                 loader=numpy_loader):
-        npys = sorted(make_dataset(root))
-        if len(npys) == 0:
-            raise(RuntimeError("Found 0 file in: " + root + "\n"
-                               "Supported extensions are: "))
-        self.root = root
-        self.npys = npys
-        self.transform = transform
-        self.return_paths = return_paths
-        self.loader = loader
+# plt.figure(figsize=(6, 5))
+#
+# plt.subplot(1, 2, 1)
+# plt.title('Content')
+# plt.imshow(content_img)
+#
+# plt.subplot(1, 2, 2)
+# plt.title('Style')
+# plt.imshow(style_img)
+#
+# plt.show()
 
-    def __getitem__(self, index):
-        path = self.npys[index]
-        npy = self.loader(path)
-        if self.transform is not None:
-            npy = self.transform(npy)
-        if self.return_paths:
-            return npy, path
-        else:
-            return npy
+# -----------------------------------------------------------------------------
+# CREATE MODEL...
 
-    def __len__(self):
-        return len(self.npys)
+content_np = np.array(content_img).T[None, None, :, :]
+style_np = np.array(style_img).T[None, None, :, :]
+
+content_tensor = tf.convert_to_tensor(content_np, dtype=tf.float32)
+style_tensor = tf.convert_to_tensor(style_np, dtype=tf.float32)
+
+BATCH, HEIGHT, WIDTH, CHANNELS = content_tensor.shape
+FILTERS = 4096
+
+input_shape = (HEIGHT, WIDTH, CHANNELS)
+
+model = create_model(input_shape, FILTERS)
+model.summary()
+
+# -----------------------------------------------------------------------------
+
+content_features = model(content_tensor)
+style_features = model(style_tensor)
+
+gen_np = tf.random.normal((1, *input_shape))
+gen = tf.Variable(gen_np)
+
+steps_counter = 0
+
+STEPS = 5000
+
+optimizer = Adam(learning_rate=1)
+
+
+for i in range(STEPS):
+    with tf.GradientTape() as tape:
+        tape.watch(gen)
+
+        gen_features = model(gen)
+
+        content_loss = get_content_loss(gen_features, content_features)
+        style_loss = get_style_loss(gen_features, style_features) * 0.001
+
+        loss = content_loss + style_loss
+
+    gradients = tape.gradient(loss, [gen])
+    optimizer.apply_gradients(zip(gradients, [gen]))
+
+    if i % 50 == 0:
+        print(f"Step: {i} | loss: {loss.numpy()} | {content_loss.numpy()} | {style_loss.numpy()}")
+
+steps_counter += STEPS
+
+# -----------------------------------------------------------------------------
+
+gen_np = np.squeeze(gen.numpy()).T
+gen_img = Image.fromarray(gen_np).convert('L')
+
+plt.figure(figsize=(10, 8))
+
+plt.subplot(1, 3, 1)
+plt.title("Content")
+plt.imshow(content_img)
+
+plt.subplot(1, 3, 2)
+plt.title("Style")
+plt.imshow(style_img)
+
+plt.subplot(1, 3, 3)
+plt.title("Generated")
+plt.imshow(gen_img)
+
+plt.show()
