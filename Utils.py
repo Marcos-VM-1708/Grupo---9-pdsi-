@@ -9,11 +9,45 @@ import soundfile as sf
 from keras.layers import *
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
-
-
-import librosa
-import numpy as np
 from PIL import Image
+from scipy.io import wavfile
+
+def signal(caminho_do_sinal):
+    """
+    Plota um sinal a partir de um arquivo especificado.
+
+    Parameters:
+    - caminho_do_sinal (str): O caminho do arquivo contendo o sinal. O arquivo deve ter duas colunas,
+      representando o tempo e os valores do sinal, respectivamente.
+
+    Returns:
+    - None
+
+    Raises:
+    - FileNotFoundError: Se o arquivo especificado não for encontrado.
+    - ValueError: Se houver um problema com o formato dos dados no arquivo.
+    """
+    try:
+        # Carregar dados do sinal a partir do arquivo .wav
+        taxa_amostragem, dados_do_sinal = wavfile.read(caminho_do_sinal)
+
+        # Calcular o tempo correspondente a cada amostra
+        tempo = np.arange(0, len(dados_do_sinal)) / taxa_amostragem
+
+        # Plotar o sinal
+        plt.plot(tempo, dados_do_sinal)
+        plt.title('Sinal de Áudio')
+        plt.xlabel('Tempo (s)')
+        plt.ylabel('Amplitude')
+        plt.grid(True)
+        plt.show()
+
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Arquivo não encontrado: {caminho_do_sinal}")
+    except Exception as e:
+        raise ValueError(f"Erro ao processar dados do sinal: {e}")
+
+# ----------------------------------------------------------------------------------------------------------------------
 
 def audio_to_imagem(arquivo_path, imagem_size):
     """
@@ -76,7 +110,7 @@ def image_to_audio(img, mag_min, mag_max):
     return sinal_audio
 # ----------------------------------------------------------------------------------------------------------------------
 
-def custom_kernel_initializer(shape, dtype=None):
+def kernel_initializer(shape, dtype=None):
     """
     Inicializa um kernel de maneira personalizada para uma camada Conv2D.
 
@@ -114,7 +148,7 @@ def create_model(input_shape, FILTERS):
         kernel_size=(1, 11),
         padding='same',
         activation='relu',
-        kernel_initializer=custom_kernel_initializer
+        kernel_initializer = kernel_initializer
     )(inputs)
 
     return Model(inputs=inputs, outputs=outputs)
@@ -122,13 +156,50 @@ def create_model(input_shape, FILTERS):
 # ----------------------------------------------------------------------------------------------------------------------def custom_kernel_initializer(shape, dtype=None, FILTERS, CHANNELS):
 
 def gram_matrix(x):
-    feats = tf.reshape(x, (-1, x.shape[-1]))
+    """
+    Calcula a matriz de Gram para o tensor.
+
+    Parameters:
+    - x: Tensor de entrada.
+
+    Returns:
+    Matriz de Gram.
+    """
+    feats = tf.reshape(x, (-1, tf.shape(x)[-1]))
     return tf.matmul(tf.transpose(feats), feats)
 
-def get_style_loss(A, B):
-    gram_A = gram_matrix(A)
-    gram_B = gram_matrix(B)
-    return tf.sqrt(tf.reduce_sum(tf.square(gram_A - gram_B)))
+# ----------------------------------------------------------------------------------------------------------------------def custom_kernel_initializer(shape, dtype=None, FILTERS, CHANNELS):
 
-def get_content_loss(A, B):
-    return tf.sqrt(tf.reduce_sum(tf.square(A - B)))
+def get_style_loss(style_image_features, generated_image_features):
+    """
+    Calcula a perda de estilo entre duas representações de imagem.
+
+    Parameters:
+    - style_image_features: Representação de estilo da imagem de referência.
+    - generated_image_features: Representação de estilo da imagem gerada.
+
+    Returns:
+    Perda de estilo.
+    """
+    gram_style = gram_matrix(style_image_features)
+    gram_generated = gram_matrix(generated_image_features)
+
+    # Adicionando um pequeno termo epsilon para evitar divisão por zero
+    epsilon = 1e-8
+    return tf.sqrt(tf.reduce_sum(tf.square(gram_style - gram_generated)) + epsilon)
+
+# ----------------------------------------------------------------------------------------------------------------------def custom_kernel_initializer(shape, dtype=None, FILTERS, CHANNELS):
+
+def get_content_loss(content_image_features, generated_image_features):
+    """
+    Calcula a perda de conteúdo entre duas representações de imagem.
+
+    Parameters:
+    - content_image_features: Representação de conteúdo da imagem de referência.
+    - generated_image_features: Representação de conteúdo da imagem gerada.
+
+    Returns:
+    Perda de conteúdo.
+    """
+    epsilon = 1e-8
+    return tf.sqrt(tf.reduce_sum(tf.square(content_image_features - generated_image_features)) + epsilon)

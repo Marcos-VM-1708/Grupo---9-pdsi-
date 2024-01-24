@@ -11,32 +11,32 @@ from tensorflow.keras.optimizers import Adam
 
 from Utils import *
 # -----------------------------------------------------------------------------
-# INTRODUÇÃO...
 
 SIZE = (1025, 430)
 
 # AQUI ABRIMOS DUAS MUSICAS, UMA QUE TERA SUA ESTRUTURA MANTIDA
 # E OUTRA QUE SERVIRA DE ESTUDO PARA UMA APROXIMAÇÃO DA TRASFERENCIA DE ESTILO.
-SOUND = "data/Music/AC-DC.wav"
+SOUND = "data/Music/Bbno Edamame.wav"
 STYLE = "data/Music/Bach.wav"
 
-# ESCULTANDO O SINAL...
+# VISUALIZANDO O SINAL...
+signal(SOUND)
+# signal(STYLE)
 
+content_img, mag_min, mag_max, phase = audio_to_imagem(SOUND, SIZE)
+style_img, _, _, _ = audio_to_imagem(STYLE, SIZE)
 
-content_img, mag_min, mag_max, phase = audio_to_img(SOUND, SIZE)
-style_img, _, _, _ = audio_to_img(STYLE, SIZE)
+plt.figure(figsize=(6, 5))
 
-# plt.figure(figsize=(6, 5))
-#
-# plt.subplot(1, 2, 1)
-# plt.title('Content')
-# plt.imshow(content_img)
-#
-# plt.subplot(1, 2, 2)
-# plt.title('Style')
-# plt.imshow(style_img)
-#
-# plt.show()
+plt.subplot(1, 2, 1)
+plt.title('signal music')
+plt.imshow(content_img)
+
+plt.subplot(1, 2, 2)
+plt.title('sgnal style')
+plt.imshow(style_img)
+
+plt.show()
 
 # -----------------------------------------------------------------------------
 # CREATE MODEL...
@@ -56,7 +56,7 @@ model = create_model(input_shape, FILTERS)
 model.summary()
 
 # -----------------------------------------------------------------------------
-
+# TRAING...
 content_features = model(content_tensor)
 style_features = model(style_tensor)
 
@@ -88,9 +88,8 @@ for i in range(STEPS):
         print(f"Step: {i} | loss: {loss.numpy()} | {content_loss.numpy()} | {style_loss.numpy()}")
 
 steps_counter += STEPS
-
 # -----------------------------------------------------------------------------
-
+# RESULTS...
 gen_np = np.squeeze(gen.numpy()).T
 gen_img = Image.fromarray(gen_np).convert('L')
 
@@ -109,3 +108,9 @@ plt.title("Generated")
 plt.imshow(gen_img)
 
 plt.show()
+
+x = image_to_audio(gen_img, mag_min, mag_max)
+
+gen_img.convert('RGB').save('ouput.jpg')
+np.save(f'weights.npy', gen.numpy())
+sf.write(f'output.mp3', x, 22050)
